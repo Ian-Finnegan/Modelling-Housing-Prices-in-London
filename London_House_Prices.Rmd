@@ -1,0 +1,253 @@
+---
+output: pdf_document
+---
+
+# Executive Summuary 
+
+Exploring the anonymised mortgage records data for the London area boroughs for collinearity, adn examining the summaries, scatterplots, and boxplots, appropriate steps can be taking to create a parsimonious model that describes the variability of the data with house price as the response variable and a series of other houseing characteristics as the predictor variables. An Ordinary Least Square (OLS) linear regression model is fitted to the data with optimum predictor variables determined by a stepwise AIC preocedure of the form, Purprice ~ Tenfree + CenHeat + BathTwo + FlorArea + ProfPct + RetiPct + Unemploy + Age + Type + Garage + Bedrooms, which produced an r$^2$ value of 0.56 and an AIC value of 87571. The OLS model Residuals plot, QQ plot, Scale plot, and Leverage plot are also examined to check how well the model fits the data and determining the model has no non-linear relationships, no normal distribution, homoscedasticity, and no influential outliers. Further exploration is done by examining the median house price, floor area, and residuals for each borough of the London area, this demontrated that some components of the data are best described by local variables via a Geographically Weighted Regression (GWR) model rather than as global variables as in the OLS model. A GWR model is thus created of the same form of the OLS model response and predictor variable relationship, this produced a higher r$^2$ value of 0.74 and a lower AIC of 86419 value. Therefore the GWR model is better than the OLS model at describing the variablility of the data as it takes into account the spatial heterogeneity, thus is better for house price predictions.
+
+# Introduction
+
+In this study anonymised mortgage records data for the London area is examined to determine the best pridictors for a model whose response variable is the purchased price of a house for the boroughs of London. This is done by creating a parsimonious model, a model that describes the variability of the data with as few predictor variables as possible. To that end an Ordinary Least Square (OLS) linear regression model is fitted to the data and examined. Th first step is to check for collinearity in the data, that is when independent variables are highly correlated, this collinearity causes problems by inflation of the variance and loss of procision. By plotting and checking the correlation matrix of the data using corrplot() fuction, variables with potential collinearity problems can be identified and removed. The OLS regression works by minimising the square of the residuals. The fewest predictor variable required to approriately model the data are determined by examining the Akaike Information Criterion (AIC), which examines model quality compared to another model.  
+
+The distribution of the pridictor variables over the London boroughs is aslo explored to evaluate how the data changes over location. The data's potential spatial heterogeneity means that using models with global form predictors may not describe the data in its fullest as their relative geographic locations to each other is not taken into account. As such Geographically Weighted Regression (GWR) is also used, this model works by using a moving window weighting technique where the window size is controlled by the bandwidth. A kernal is used to determine the weigthings at each location, starting at the window centre and decayiing as the distance out increases until a set distance is reached. With these geographical weights taken into account, the data can be expressed more locally than globally, and potential provide a better discription of the housing prices in London.
+
+# The Data
+
+The data is anonymised mortgage records for the London area, made up of the house price and then a series of property characteristics. Most of the data is comprised of dummy varibles which will be combined into sigle factor variable later. 
+
+\newpage
+
+* Easting - Easting in m
+* Northing - Northing in m
+* Purprice - Purchase Price in GBP
+* BldIntWr - Built between 1918 and 1939
+* BldPostW - Built between 1945 and 1959
+* Bld60s - Built between 1960 and 1969
+* Bld70s - Built between 1970 and 1979
+* Bld80s - Built between 1980 and 1989
+* TypDetch - Detached property
+* TypSemiD - Semi-detached property
+* TypFlat - Flat or apartment
+* GarSingl - Single Garage
+* GarDoubl - Double Garage
+* Tenfree - Leasehold/Freehold indicator
+* CenHeat - Central heating
+* BathTwo - Two or more bathrooms
+* BedTwo - Two bedrooms
+* BedThree - Three bedrooms
+* BedFour - Four bedrooms
+* BedFive - Fie bedrooms
+* NewPropD - New property
+* FlorArea - Floor area in square metres
+* NoCarHh - Proportion of households without a car
+* CarspP - Cars per person in neighborhood
+* ProfPct - Proportion of Households with Professional Head
+* UnskPct - Proportion of Households with Unskilled head
+* RetiPct - Proportion of residents retired
+* Saleunem - Not known
+* Unemploy - Unemployed workers
+* PopnDnsy - Local population density
+
+# Results
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(MASS)
+library(rgdal)
+library(rgeos)
+library(corrplot)
+library(classInt)
+library(stats)
+library(GWmodel)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# The raw data
+LondonData <- read.csv("DataScienceProj.csv",stringsAsFactors=FALSE)
+
+# Function to convert dummy variables to factor variable
+Dummy2Factor <- function(mat,lev1="Level1") {
+      mat <- as.matrix(mat)
+      factor((mat %*% (1:ncol(mat))) + 1,
+          labels = c(lev1, colnames(mat)))
+}
+
+# Converting dummy variable to factors
+Age <- Dummy2Factor(LondonData[,5:9],"PreWW1")
+Type <- Dummy2Factor(LondonData[,10:12],"Others")
+Garage <- Dummy2Factor(LondonData[,13:14],"HardStnd")
+Bedrooms <- Dummy2Factor(LondonData[,18:21],"BedOne")
+```
+
+The first thing done was to read in the data and change dummy variables to factors. BldIntWr, BldPostW, Bld60s, Bld70s, and Bld80s where changed into the Age variable with PreWW1 accounting for the unlabelled. TypDetch, TypSemiD, and TypFlat where changed into Type. GarSingl, GarDoubl, and HardStnd make up the variable Garage. Finally, BedOne, BedTwo, BedThree, BedFour, and BedFive make up the Bedrooms variable.
+
+```{r, warning=FALSE, message=FALSE}
+par(mfrow=c(1,2))
+LondonDataNew <- data.frame(LondonData[,c(2:4,15:17,22,23:31)],Age,Type,Garage,Bedrooms) # New data
+corrplot::corrplot(cor(LondonDataNew[,-c(17:20)])) # Plot of correlation matrix of new data
+
+LondonDataNew <- data.frame(LondonData[,c(2:4,15:17,22,23:24,26:28,30:31)],Age,Type,Garage,Bedrooms) # Removing collinearity
+corrplot::corrplot(cor(LondonDataNew[,-c(15:18)])) # Plot of new correlation matrix
+par(mfrow=c(1,1))
+```
+
+By plotting the correlation matrix variables with collinearity issues become identifiable. The variable CarspP has a strong correlation with both the NoCarHh variable and the Saleunem variable. As such CarspP was removed to reduce the collinearty problem. The variable Saleunem was also removed as the describtion of the variable is not known. 
+
+```{r, warning=FALSE, message=FALSE}
+summary(LondonDataNew)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Boxplots of data
+par(mfrow=c(2,3))
+boxplot(Purprice~CenHeat,data=LondonDataNew, main="Central Heating")
+boxplot(Purprice~BathTwo,data=LondonDataNew, main="2 or More Bathrooms")
+boxplot(Purprice~Age,data=LondonDataNew, main="Built Period",las=2)
+boxplot(Purprice~Type,data=LondonDataNew, main="House Type",las=2)
+boxplot(Purprice~Garage,data=LondonDataNew, main="Garage Type",las=2)
+boxplot(Purprice~Bedrooms,data=LondonDataNew, main="Bedrooms",las=2)
+par(mfrow=c(1,1))
+```
+
+\newpage
+
+By examining the summary and boxplots data that the medians of the factor variables are quite similar to each other, and that the ranges for the data are with reasonable expectations except for RetoPct and Unemploy whose Max values seem to have taken a drastic jumo. This could be due to some spatial heterogeneity, with some boroughs having relatively high Retirement or Unemployment numbers.   
+
+```{r, warning=FALSE, message=FALSE}
+# Boxplot of house price data
+LondonDataNew <- LondonDataNew[LondonDataNew$Purprice < 600000,]
+boxplot(LondonDataNew$Purprice, main="House Prices")
+
+# Hosues price vs Floor Area plot
+plot(LondonDataNew[,c("FlorArea","Purprice")],pch=16,cex=0.5, main="House Price Vs Floor Area", xlab="Floor Area (m^2)", ylab="House Purchase Price (GBP)")
+lines(lowess(LondonDataNew[,c("FlorArea","Purprice")]),col="red")
+
+# Map of house prices on by eastings and northings
+Classes <- classIntervals(LondonDataNew$Purprice,10,"quantile")
+Colours <- findColours(Classes,palette())
+plot(LondonDataNew$Easting,LondonDataNew$Northing,pch=16,cex=0.5,col=Colours)
+
+# Coordinate trends
+CoordMod <- lm(Purprice~Easting+Northing+(Easting^2)+(Northing^2)+(Easting*Northing),
+            data=LondonDataNew)
+summary(CoordMod)
+```
+
+By examining the house price verses the floor area of the house it can be seen that as the house size increases so does the price. However there is still many outliers as evident by the boxplot, why? Other variables might be required to account for the discrepency as house price isn't soley depenedent on its size or there are potentially geographic reasons as houses in one borough may not cost the same as houses in another borough even if they are the same size. The map of the house prices over the eastings and northings shows just how distributed the prices are. By applying a model relating the house price to the eastings and northings, in this case a quadratic model had the lowest AIC, it can be seen that the prices get higher by moving north and west, while they get lower by moving south and east. Further prdictor variable are required to account for discrpency of the above relationship.
+
+```{r, warning=FALSE, message=FALSE}
+# The Model
+price.lm   <- lm(Purprice~., data=LondonDataNew[,-c(1,2)]) # Making model without easting and northing
+invisible(capture.output(price.step <- stepAIC(price.lm))) # Determining which variables to keep 
+summary(price.step) 
+price.step$anova # Model comparison
+```
+
+A linear model is now created of the form, Purprice ~ Tenfree + CenHeat + BathTwo + NewPropD + FlorArea + NoCarHh + ProfPct + UnskPct + RetiPct + Unemploy + PopnDnsy + Age + Type + Garage + Bedrooms, using the stepAIC() function a stepwise procedure removes predictor variables on their AIC. From the model summary and the anova table it can be seen that the final model is Purprice ~ Tenfree + CenHeat + BathTwo + FlorArea + ProfPct + RetiPct + Unemploy + Age + Type + Garage + Bedrooms, and it has an r$^2$ value of 0.565.
+
+```{r, warning=FALSE, message=FALSE}
+par(mfrow=c(2,2))
+plot(price.step)
+par(mfrow=c(1,1))
+```
+
+To further examine if this model is a good fit for the data Residual, QQ, Scale, and Leverage plots can be explored. The Residuals verses Fitted values plot shows if the residuals had any non-linear patterns that the model didn't capture, however since the residuals are equally spread around the horizontal line without distinct patterns there is probably no non-linear relationships. The Normal Q-Q plot shows if the residuals are normally distributed, and while there are along the normal line in the middle they also have heavy tails, thus the data probably isn't normally distributed. 
+
+To examine homoscedasticity the Scale-Location plot can be used as it shows if the residuals are spread equally along the predictors. While not completely horizontal, the residuals do have some equal variance. Finally, the Residuals verses Leverage determines wether there is influential outliers, in this case there is not as there is no visiable Cook's distance lines. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+quickMap2 <- function(Var,nClass=9,dp=0,plotNames=FALSE){
+   require(classInt)
+   require(RColorBrewer)
+   Classes <- classIntervals(Var,nClass,method="quantile",dataPrecision=dp)
+   Palette <- brewer.pal(nClass,"Reds")
+   Colours <- findColours(Classes,Palette)
+   Bname <- gsub(" London Boro","",LB$NAME)
+   plot(LB,col=Colours)
+   legend("bottomright",
+      legend=names(attr(Colours,"table")),
+      fill=attr(Colours,"palette"),
+      cex=0.75,bty="n")
+   box()
+   if(plotNames) {
+      xy <- coordinates(LB)
+      text(xy[,1],xy[,2],Bname,col="black",cex=0.5)
+   }
+}
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Variation by borough 
+invisible(capture.output(LB <- readOGR(dsn=".",layer="LondonBoroughs",stringsAsFactors=FALSE)))  # Loading borough data
+LH <- SpatialPointsDataFrame(LondonDataNew[,1:2],LondonDataNew) # Makeing SPDF
+proj4string(LH) <- CRS(proj4string(LB)) # copy CRS
+LHLB <- over(LH,LB)   # spatial joining points and polygons
+LondonDataNew$Borough <- gsub(" London Boro","",LHLB$NAME)  # add borough names only to data
+Boroughs <- names(table(LondonDataNew$Borough)) # borough names
+
+# Price by borough
+b.order <- rank(tapply(LondonDataNew$Purprice+runif(nrow(LondonDataNew)),
+                       LondonDataNew$Borough,median)) # ranking boroughs by the median of prices
+
+boxplot(log(Purprice)~Borough,data=LondonDataNew,xaxt="n", at=b.order) 
+axis(1,labels=Boroughs,at=b.order,las=2)
+title("Log of Price by Borough")
+
+quickMap2(tapply(LondonDataNew$Purprice,LondonDataNew$Borough,median),plotNames=TRUE,dp=3)
+```
+
+To examine if location may play a role the median housing prices where expressed by their boroughs. As seen in the boxplots their median are quite similar to each other, with only the City of London showing a trend of higher house prices. The borough plot shows that there is a fairly even spread of house prices accross London with the prices seeming to increase the closer to Londons centre the borough is. While the median house price deviations over the geographical location may be small, it's still present and can potential describe the variablity of the data a little bit better.
+
+```{r, warning=FALSE, message=FALSE}
+# Floor area by borough
+b.order.floor <- rank(tapply(LondonDataNew$FlorArea+runif(nrow(LondonDataNew)),
+                       LondonDataNew$Borough,median)) # ranking boroughs by the median of floor area
+
+boxplot(FlorArea~Borough,data=LondonDataNew,xaxt="n", at=b.order.floor) 
+axis(1,labels=Boroughs,at=b.order.floor,las=2)
+title("Floor Area by Borough")
+
+quickMap2(tapply(LondonDataNew$FlorArea,LondonDataNew$Borough,median),plotNames=TRUE,dp=3)
+```
+
+Further examination into median variable distributions over it's respective borough shows that the median floor area also has a slight change from borough to borough. While the boxplot shows again that the median values are not too dissimilar, except for the City of London, the borough plot again shows that the difference is there. The borough plot shows that the median floor area gets lower the closer to London centre the borough is, again demonstrating that a more local model might be a better fit. 
+
+```{r, warning=FALSE, message=FALSE}
+# Residuals by borough
+LondonDataNew$stdres.price.step <- stdres(price.step)
+b.order.price.step <- rank(tapply(LondonDataNew$stdres.price.step+
+                                    runif(nrow(LondonDataNew))*0.0001,LondonDataNew$Borough,median))
+
+boxplot(stdres.price.step~Borough, data=LondonDataNew, xaxt="n", at=b.order.price.step)
+axis(1,labels=Boroughs,at=b.order.price.step,las=2)
+title("Standardised Residual by Borough")
+
+quickMap2(tapply(LondonDataNew$stdres.price.step,LondonDataNew$Borough,median),plotNames=TRUE,dp=3)
+```
+
+\newpage
+
+Finally, the boxplot of the median residuals by borough again shows that the median residual values dont change drastically from one borough to the other. The borough plot shows that the median residuals get larger the more eastern the borough is.  
+
+```{r, warning=FALSE, message=FALSE}
+# GWR
+set.seed(1)
+s <- sample(nrow(LondonDataNew), round(.3*nrow(LondonDataNew))) # Splitting data
+LondonDataTrain <- LondonDataNew[s,] # Training set 
+LondonDataTest <- LondonDataNew[-s,] # Testing set
+
+LondonDataTrain <- LondonDataTrain[,-c(19:20)] # Removing un-needed variable
+LondonDataTrain <- SpatialPointsDataFrame(cbind(LondonDataTrain[,1:2]),LondonDataTrain) # Making SPDF 
+gwr<-gwr.basic(Purprice ~ Tenfree + CenHeat + BathTwo + FlorArea + ProfPct + RetiPct + 
+                 Unemploy + Age + Type + Garage + Bedrooms, 
+               data=LondonDataTrain, bw=250, adaptive=T) 
+gwr
+```
+
+Taking into account the previous few graphs that show the distribution of median values for house price, floor area, and residuals over their respective boroughs, and taking into the account that given the data available the most optimum OLS regression model was made with an r$^2$ value of 0.56, the next solution to describe more of the variability of the data is Geographically Weigthed Regression. Given the size of the data it was first broken into a training set and a testing set, with the training set being made up of 3760 rows. The data was then transformed into a spatial points data frame, using the eastings and northings, and a regression model made with gwr.basic() function from the GWmodels package. This model does in fact describe more of the data, with an r$^2$ value of 0.74, along with a lower AIC of 86419 compared to that of 87571 for the OLS model.
+
+\newpage
+
+# Conclusion
+
+Utilinsing the stepwise AIC procedure the optimum predictors, given the data, for a parsimonious model to predict housing price where determined to be Tenfree, CenHeat, BathTwo, FlorArea, ProfPct, RetiPct, Unemploy, Age, Type, Garage, and Bedrooms. The OLS linear regression model for those predictor had an r$^2$ value of 0.56, with no non-linear relationships, no normal distribution, homoscedasticity, and no influential outliers. However, while the OLS model is good, it can be imporved by taking into account the data's spatial heterogeneity as seen in the borough plots above. This improvement is done by using the same predictor, but expressing them as local variabl over a given range rather than globale variables. This new geographically weigthed regression model produces a higher r$^2$ value of 0.74 and a lower AIC of 86419 value, meaning that the GWR model describe more of the variability of the data and is a better model for prdicting house prices. 
